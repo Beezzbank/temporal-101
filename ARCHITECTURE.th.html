@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>สถาปัตยกรรม Temporal บน Kubernetes</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, securityLevel: "loose", theme: "neutral" });
+  </script>
+  <style>
+    :root { --ink: #17202a; --muted: #52606d; --line: #d9e2ec; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: #eef3f7; font: 16px/1.7 system-ui, "Segoe UI", sans-serif; }
+    main { width: min(1120px, calc(100% - 32px)); margin: 32px auto 64px; }
+    header, section { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 28px; margin-bottom: 20px; box-shadow: 0 8px 24px #1f29370d; }
+    h1, h2 { line-height: 1.25; margin-top: 0; } h1 { color: #16324f; } h2 { color: #205072; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+    .lead { color: var(--muted); font-size: 1.1rem; } .diagram { overflow-x: auto; }
+    code { background: #edf2f7; border-radius: 4px; padding: 2px 5px; } pre { background: #17202a; color: #e6edf3; padding: 18px; border-radius: 6px; overflow-x: auto; } pre code { background: transparent; padding: 0; }
+    table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; } th { background: #f7fafc; }
+    @media (max-width: 640px) { main { width: calc(100% - 16px); margin-top: 8px; } header, section { padding: 18px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>สถาปัตยกรรม Temporal บน Kubernetes สำหรับ Lab</h1>
+      <p class="lead">Lab นี้รัน Temporal บน Kubernetes โดยใช้ PostgreSQL สำหรับเก็บสถานะและประวัติ Workflow, Elasticsearch สำหรับข้อมูล Visibility และ Worker Pod สำหรับประมวลผล Workflow และ Activity</p>
+    </header>
+    <section>
+      <h2>ภาพรวมสถาปัตยกรรม</h2>
+      <div class="diagram"><pre class="mermaid">flowchart LR
+    user[ผู้ใช้ / นักพัฒนา]
+    cli[Temporal CLI\nadmin-tools pod หรือ client ภายในเครื่อง]
+    browser[เว็บเบราว์เซอร์]
+    subgraph k8s[Kubernetes cluster - namespace: temporal]
+        frontend[Temporal Frontend Service\ntemporal-frontend:7233]
+        server[Temporal Server Pod\ntemporalio/auto-setup:1.29.1]
+        worker[Worker Pod\nPython + temporalio SDK\nWorkflow และ Activity]
+        ui[Temporal UI Pod\ntemporal-ui:8080]
+        admin[Admin Tools Pod\nTemporal CLI]
+        postgres[(PostgreSQL Pod\nWorkflow state\npostgres:5432)]
+        elastic[(Elasticsearch Pod\nVisibility\nelasticsearch:9200)]
+    end
+    user -->|เริ่ม Workflow| cli
+    user -->|port-forward :8080| browser
+    browser -->|ดูประวัติ Workflow| ui
+    cli -->|คำสั่ง Workflow| frontend
+    admin -->|คำสั่ง CLI| frontend
+    ui -->|เชื่อมต่อ :7233| frontend
+    frontend --> server
+    worker -->|poll hello-task-queue| frontend
+    server -->|สถานะและประวัติ| postgres
+    server -->|ข้อมูล Visibility| elastic</pre></div>
+    </section>
+    <section>
+      <h2>ลำดับการทำงาน</h2>
+      <ol>
+        <li>ผู้ใช้เริ่ม <code>GreetingWorkflow</code> หรือ <code>FailingWorkflow</code> ผ่าน Temporal CLI</li>
+        <li>Temporal Frontend Service ส่งคำขอไปยัง Temporal Server</li>
+        <li>Temporal Server เก็บสถานะและประวัติ Workflow ใน PostgreSQL</li>
+        <li>Temporal Server ส่งข้อมูล Visibility ไปยัง Elasticsearch</li>
+        <li>Worker Pod ดึงงานจาก Task Queue ชื่อ <code>hello-task-queue</code></li>
+        <li><code>GreetingWorkflow</code> ทำงานสำเร็จ ส่วน <code>FailingWorkflow</code> สร้างข้อผิดพลาดโดยตั้งใจ</li>
+        <li>ผู้ใช้เปิด Temporal UI เพื่อดูประวัติ Workflow และข้อผิดพลาด</li>
+      </ol>
+    </section>
+    <section>
+      <h2>หน้าที่ของ Kubernetes Resource</h2>
+      <table><thead><tr><th>Resource</th><th>หน้าที่</th><th>การเชื่อมต่อ</th></tr></thead><tbody>
+        <tr><td><code>temporal-server</code></td><td>ระบบประสานการทำงานของ Temporal</td><td><code>temporal-frontend.temporal.svc.cluster.local:7233</code></td></tr>
+        <tr><td><code>temporal-worker</code></td><td>ประมวลผล Workflow และ Activity</td><td><code>hello-task-queue</code></td></tr>
+        <tr><td><code>temporal-ui</code></td><td>Web interface สำหรับดู Workflow</td><td>HTTP <code>8080</code></td></tr>
+        <tr><td><code>temporal-admin-tools</code></td><td>Pod สำหรับใช้ Temporal CLI</td><td>Temporal Frontend Service</td></tr>
+        <tr><td><code>postgres-0</code></td><td>เก็บสถานะและประวัติ Workflow</td><td>PostgreSQL <code>5432</code></td></tr>
+        <tr><td><code>elasticsearch-0</code></td><td>เก็บข้อมูล Visibility สำหรับค้นหา</td><td>Elasticsearch <code>9200</code></td></tr>
+      </tbody></table>
+    </section>
+    <section>
+      <h2>คำสั่งสำหรับทดสอบ</h2>
+      <pre><code>kubectl apply -f files\50-temporal-worker.yaml
+kubectl -n temporal rollout status deployment/temporal-worker
+
+kubectl -n temporal exec -it deployment/temporal-admin-tools -- temporal workflow start --namespace default --task-queue hello-task-queue --type GreetingWorkflow --input '"Temporal"'
+
+kubectl -n temporal exec -it deployment/temporal-admin-tools -- temporal workflow start --namespace default --task-queue hello-task-queue --type FailingWorkflow --input '"testing worker error"'
+
+kubectl -n temporal port-forward service/temporal-ui 8080:8080</code></pre>
+      <p>จากนั้นเปิด <a href="http://localhost:8080">http://localhost:8080</a> ในเว็บเบราว์เซอร์</p>
+    </section>
+  </main>
+</body>
+</html>

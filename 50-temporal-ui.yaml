@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-ui
+  namespace: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-ui
+  template:
+    metadata:
+      labels:
+        app: temporal-ui
+    spec:
+      containers:
+        - name: temporal-ui
+          image: temporalio/ui:2.34.0    # ปรับ tag ตามเวอร์ชันที่ทีมคุณ pin ไว้ ไม่จำเป็นต้อง match server เป๊ะ
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: temporal-frontend.temporal.svc.cluster.local:7233
+            - name: TEMPORAL_UI_PORT
+              value: "8080"
+            - name: TEMPORAL_CORS_ORIGINS
+              value: "http://localhost:3000"   # เพิ่ม origin จริงถ้าจะเปิดผ่าน Ingress/domain ภายหลัง
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-ui
+  namespace: temporal
+  labels:
+    app: temporal-ui
+spec:
+  type: ClusterIP
+  selector:
+    app: temporal-ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

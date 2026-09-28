@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>สรุปการทำงาน Temporal Workflow</title>
+<style>
+:root{--ink:#183247;--muted:#617789;--teal:#087f8c;--orange:#d97706;--navy:#102a43;--paper:#f5f8fa;--line:#d9e2ec;--green:#477a2f;--success:#e2f0d9}*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0}body{overflow:hidden;background:var(--navy);color:var(--ink);font-family:Tahoma,"Noto Sans Thai",sans-serif}.deck{width:100%;height:100%;background:var(--paper)}
+.slide{display:none;width:100%;height:100%;overflow:auto;padding:58px clamp(24px,7vw,96px) 70px;position:relative}.slide.active{display:flex;flex-direction:column;animation:reveal .22s ease-out}.slide:before{content:"";position:absolute;inset:0 0 auto;height:8px;background:var(--teal)}.dark{color:#f7fafc;background:linear-gradient(135deg,#102a43,#164e63 72%,#087f8c)}.dark:before{background:var(--orange)}.eyebrow{margin:0 0 12px;color:var(--teal);font-size:13px;font-weight:700}.dark .eyebrow{color:#ffd166}h1{max-width:820px;margin:24px 0;font-size:clamp(36px,6vw,68px);line-height:1.15}h2{margin:0 0 26px;color:var(--teal);font-size:clamp(28px,4vw,42px);line-height:1.2}.dark h2{color:#80e1d7}h3{margin:0 0 10px;font-size:20px}p{font-size:17px;line-height:1.55}code,pre{font-family:Consolas,"Courier New",monospace}code{padding:2px 5px;border-radius:3px;background:#e7eff8;font-size:.9em}pre{margin:12px 0;padding:16px;overflow:auto;border-left:4px solid var(--teal);background:#102a43;color:#e6edf1;font-size:15px;line-height:1.5;white-space:pre-wrap}
+.subtitle{max-width:800px;color:var(--muted);font-size:23px}.dark .subtitle,.dark .meta{color:#d9edf2}.accent{color:#ffbd59}.meta{margin-top:auto;color:var(--muted);font-size:14px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.card{min-width:0;padding:17px;border:1px solid var(--line);border-top:5px solid var(--teal);background:white}.card.orange{border-top-color:var(--orange)}.card p{margin:0;color:var(--muted)}.flow{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin:auto 0}.node{min-width:100px;padding:14px;border:2px solid var(--teal);background:white;color:var(--ink);font-weight:700;text-align:center}.arrow{color:var(--orange);font-size:25px;font-weight:700}.result{margin:22px 0;padding:20px;background:var(--success);color:var(--green);text-align:center}.result strong{display:block;margin-bottom:6px;font-size:19px}.footer{position:absolute;right:clamp(24px,7vw,96px);bottom:20px;color:var(--muted);font-size:13px}.dark .footer{color:#d9edf2}
+.controls{position:fixed;z-index:2;right:18px;bottom:12px;display:flex;align-items:center;gap:8px;padding:6px;background:#102a43e8;color:white;font:14px Tahoma,sans-serif}.controls button{min-width:40px;min-height:38px;border:1px solid #9fb3c3;background:white;color:var(--ink);font:inherit;font-weight:700;cursor:pointer}.controls button:focus-visible{outline:2px solid #80e1d7;outline-offset:2px}.counter{min-width:48px;text-align:center}@keyframes reveal{from{opacity:.6;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@media(max-width:760px){.slide{padding:38px 20px 70px}.grid,.grid.two{grid-template-columns:1fr;gap:10px}.card{padding:14px}.flow{margin:12px 0}.node{min-width:88px;padding:10px}.arrow{font-size:21px}.controls{right:8px;bottom:7px}.footer{right:16px;bottom:15px}}@media(prefers-reduced-motion:reduce){.slide.active{animation:none}}
+.image-explanation{max-width:1050px;margin:0 0 12px;color:var(--ink);font-size:16px;line-height:1.5}.photo-stage{display:grid;grid-template-rows:minmax(0,1fr) auto;flex:1;min-height:0;margin:0;padding:12px;border:1px solid var(--line);background:white}.photo-stage img{display:block;width:100%;height:100%;min-height:0;object-fit:contain}.photo-stage figcaption{padding:8px 0 0;color:var(--muted);font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+<main class="deck" aria-live="polite">
+<section class="slide active dark"><p class="eyebrow">TEMPORAL KUBERNETES LAB</p><h1>สรุปการทำงาน<br><span class="accent">Temporal Workflow</span></h1><p class="subtitle">จาก REST API โดยตรง สู่ Workflow ที่ตรวจสอบย้อนหลังได้</p><div class="flow"><div class="node">REST Client</div><span class="arrow">→</span><div class="node">Webhook API</div><span class="arrow">→</span><div class="node">Temporal</div><span class="arrow">→</span><div class="node">Worker</div></div><p class="meta">ไม่ผ่าน Kafka หรือ message consumer</p><span class="footer">01 / 09</span></section>
+<section class="slide"><p class="eyebrow">ภาพรวม</p><h2>REST API เริ่ม Workflow โดยตรง</h2><div class="flow"><div class="node">Client</div><span class="arrow">→</span><div class="node">POST /webhooks/orders</div><span class="arrow">→</span><div class="node">Temporal</div><span class="arrow">→</span><div class="node">Worker</div></div><div class="result"><strong>OrderWorkflow เปลี่ยนเป็น Completed</strong>ประวัติ Workflow ถูกเก็บไว้เพื่อตรวจสอบย้อนหลัง</div><p class="meta">API ส่งคำสั่งเริ่ม Workflow ไป Temporal โดยตรง</p><span class="footer">02 / 09</span></section>
+<section class="slide"><p class="eyebrow">องค์ประกอบ</p><h2>ส่วนประกอบหลักและหน้าที่</h2><div class="grid"><article class="card orange"><h3>REST Client</h3><p>ส่งคำขอ JSON ผ่าน HTTP เพื่อสร้าง Workflow</p></article><article class="card"><h3>Webhook API</h3><p>ตรวจสอบข้อมูลและเรียก Temporal Client โดยตรง</p></article><article class="card orange"><h3>Temporal Server</h3><p>รับคำสั่ง Workflow จัดการ Task และบันทึกประวัติการทำงาน</p></article><article class="card"><h3>Temporal Worker</h3><p>Poll งานจาก hello-task-queue แล้วรัน Workflow และ Activity</p></article><article class="card orange"><h3>PostgreSQL</h3><p>เก็บสถานะและประวัติ Workflow อย่างถาวร</p></article><article class="card"><h3>Elasticsearch และ UI</h3><p>จัดทำข้อมูล Visibility เพื่อค้นหาและตรวจสอบผ่าน Temporal UI</p></article></div><span class="footer">03 / 09</span></section>
+<section class="slide"><p class="eyebrow">ขั้นตอนที่ 1</p><h2>ส่งคำสั่งซื้อผ่าน REST API</h2><div class="grid two"><article class="card"><h3>คำขอจาก Client</h3><pre>POST /webhooks/orders&#10;&#10;{&#10;  "order_id": "ORD-001",&#10;  "customer": "Alice"&#10;}</pre><p>ข้อมูลไม่ครบหรือชนิดไม่ถูกต้องจะได้รับ HTTP 400</p></article><article class="card orange"><h3>Webhook API → Temporal</h3><p>API ตรวจสอบข้อมูล แล้วเริ่ม <code>OrderWorkflow</code> โดยส่ง order_id และ customer เป็น Input</p><p style="margin-top:12px">HTTP 202 หมายถึงรับคำขอเริ่ม Workflow แล้ว</p></article></div><span class="footer">04 / 09</span></section>
+<section class="slide"><p class="eyebrow">ขั้นตอนที่ 2</p><h2>เริ่ม Workflow ด้วย ID ที่คงที่</h2><div class="grid"><article class="card orange"><h3>Workflow Type</h3><p><code>OrderWorkflow</code> ประมวลผลข้อมูลคำสั่งซื้อ</p></article><article class="card"><h3>Workflow ID</h3><p><code>order-ORD-001</code> ใช้ระบุ Order แต่ละรายการ</p></article><article class="card orange"><h3>Task Queue</h3><p><code>hello-task-queue</code> เป็นคิวที่ Worker ใช้รับงาน</p></article></div><div class="result"><strong>ใช้ order-{order_id} เป็น Workflow ID</strong>ส่งคำขอเดิมซ้ำจะไม่สร้าง Workflow ใหม่สำหรับ Order เดิม</div><span class="footer">05 / 09</span></section>
+<section class="slide"><p class="eyebrow">ขั้นตอนที่ 3</p><h2>Temporal จัดการ Task และประวัติ</h2><div class="grid"><article class="card"><h3>Temporal Server</h3><p>รับคำขอจาก API บันทึกสถานะและประวัติ Workflow แล้วสร้าง Task ลงใน hello-task-queue</p></article><article class="card orange"><h3>Durable Storage</h3><p><strong>PostgreSQL</strong> เก็บสถานะและประวัติ Workflow</p><p style="margin-top:12px"><strong>Elasticsearch</strong> เก็บข้อมูล Visibility สำหรับค้นหา</p></article><article class="card"><h3>Temporal Worker</h3><p>เชื่อมต่อกับ Server และ Poll hello-task-queue เพื่อรับ OrderWorkflow ไปประมวลผล</p></article></div><p class="meta">Temporal เก็บประวัติ Workflow ให้ติดตามสถานะและตรวจสอบการทำงานได้</p><span class="footer">06 / 09</span></section>
+<section class="slide"><p class="eyebrow">ขั้นตอนที่ 4</p><h2>Activity ทำงานและ Workflow สำเร็จ</h2><div class="result"><strong>OrderWorkflow เรียก Activity: process_order</strong>Input: order_id = ORD-001 | customer = Alice</div><pre>Order ORD-001 for Alice processed successfully</pre><div class="result"><strong>สถานะ Workflow: COMPLETED</strong>Worker ส่งผล Activity กลับไปยัง Temporal Server และบันทึกประวัติ</div><span class="footer">07 / 09</span></section>
+<section class="slide"><p class="eyebrow">กรณีผิดพลาด</p><h2>ตรวจสอบคำขอและผลจาก Temporal</h2><div class="grid two"><article class="card orange"><h3>ข้อมูลไม่ถูกต้อง</h3><p>ถ้าไม่มี order_id หรือ customer ที่เป็นข้อความ API ตอบ HTTP 400</p></article><article class="card"><h3>Workflow เริ่มแล้ว</h3><p>API ตอบ HTTP 202 พร้อม Workflow ID เดิม เพื่อให้ Client ใช้ติดตามงานได้</p></article></div><span class="footer">08 / 09</span></section>
+<section class="slide dark"><p class="eyebrow">สรุป</p><h2>ทดสอบง่ายด้วย REST API</h2><div class="grid two"><article class="card"><h3>เส้นทางสั้น</h3><p>Client เรียก API แล้วเริ่ม Workflow ใน Temporal โดยตรง</p></article><article class="card orange"><h3>ติดตามได้</h3><p>ใช้ Workflow ID ค้นหาสถานะและประวัติใน Temporal UI</p></article><article class="card orange"><h3>ทดสอบได้ทันที</h3><p>ใช้ curl ส่ง JSON และตรวจ HTTP response</p></article><article class="card"><h3>ประมวลผลแยกจาก API</h3><p>Worker รับ Activity จาก hello-task-queue หลัง API ตอบรับคำขอ</p></article></div><p class="meta">GreetingWorkflow → say_hello | FailingWorkflow → fail_on_purpose | OrderWorkflow → process_order</p><span class="footer">09 / 09</span></section>
+</main>
+<nav class="controls" aria-label="ตัวควบคุมสไลด์"><button id="previous" type="button" aria-label="สไลด์ก่อนหน้า">←</button><span class="counter" id="counter" aria-live="polite">1 / 9</span><button id="next" type="button" aria-label="สไลด์ถัดไป">→</button></nav>
+<script>
+const priorities=new Map([
+	['REST API เริ่ม Workflow โดยตรง',1],
+	['Activity ทำงานและ Workflow สำเร็จ',2],
+	['ประโยชน์และ Workflow ใน Worker',3],
+	['ส่วนประกอบหลักและหน้าที่',4],
+	['รับคำสั่งซื้อและส่ง Event',5],
+	['เริ่ม Workflow ด้วย ID ที่คงที่',6],
+	['Temporal จัดการ Task และประวัติ',7],
+	['Event ไม่ถูกต้องจะไปที่ไหน',8]
+]);
+const deck=document.querySelector('.deck');
+const contentSlides=[...deck.querySelectorAll('.slide')].sort((left,right)=>{
+	const rank=slide=>slide.querySelector('h1')?0:priorities.get(slide.querySelector('h2')?.textContent.trim())??100;
+	return rank(left)-rank(right);
+});
+contentSlides.forEach(slide=>deck.appendChild(slide));
+const imageExplanations=[
+	{number:10,title:'ระบบสมัยใหม่ล้มเหลวได้หลายจุด',description:'คิวงานอาจค้างหรือเต็ม API อาจ timeout และ service หรือฐานข้อมูลอาจหยุดทำงาน Temporal ช่วยเก็บความคืบหน้าและทำ retry เพื่อให้งานกลับมาทำต่อได้โดยไม่ทำให้ข้อมูลเสียหาย'},
+	{number:11,title:'งานข้ามหลายบริการมี state ที่ต้องดูแล',description:'เมื่อหลาย service ทำงานร่วมกัน จะต้องจัดการ shared state ธุรกรรมข้ามบริการ และ idempotency ให้ถูกต้อง โดยเฉพาะ workflow ที่ใช้เวลานาน'},
+	{number:12,title:'ความซับซ้อนเพิ่มเร็วกว่าความเร็วในการพัฒนา',description:'ยิ่งเพิ่ม feature และ service ก็ยิ่งมี dependency และการรอคอยมากขึ้น ทีมต้องรับมือกับ rollback, retry, state management และปัญหาความน่าเชื่อถือ'},
+	{number:13,title:'ความซับซ้อนกระทบทั้งทีมและความน่าเชื่อถือ',description:'เมื่อระบบมีคิว overflow, API หรือฐานข้อมูลล่ม และ state กระจายหลายบริการ นักพัฒนาจะเสียเวลาแก้ปัญหา ความเร็วส่ง feature และความน่าเชื่อถือจึงลดลง อีกทั้งติดตามภาพรวม end-to-end ได้ยาก'},
+	{number:14,title:'Temporal จัดการกลไกเบื้องหลัง workflow',description:'นักพัฒนาเขียน Workflow ด้วยภาษาที่ใช้และ Temporal SDK ส่วน Temporal ช่วยดูแล queue, retry, rollback, state machine และ timer โดยมี Worker ประมวลผลงาน'},
+	{number:15,title:'Temporal คือ runtime สำหรับ state แบบกระจาย',description:'Temporal เป็น open-source runtime ที่ช่วยจัดการสถานะของแอปพลิเคชันแบบกระจายขนาดใหญ่ และทำให้กระบวนการที่ยาวนานมีสถานะกับประวัติที่ติดตามได้'},
+	{number:16,title:'เหมาะกับงานสำคัญที่เชื่อมหลายบริการ',description:'งานที่มีคุณค่าสูงของบริษัทซอฟต์แวร์มักใช้เวลานานและประสานหลาย service ตัวอย่างในภาพกล่าวถึง Uber และ Stripe'},
+	{number:17,title:'ระบบต้องจำลอง ทดสอบ และกู้คืน workflow ได้',description:'ควรสร้าง asynchronous logic ที่นำกลับมาใช้ ทดสอบ version และ migrate ได้ พร้อมกำหนด timeout/retry ให้เป็นมาตรฐาน บันทึกความคืบหน้า ไม่ทิ้งงาน และรองรับการ scale'},
+	{number:18,title:'เปลี่ยนจาก choreography เป็น orchestration',description:'ภาพเปรียบเทียบการให้บริการหลายตัวประสานกันเอง กับการให้ Temporal Workflow เป็นตัวกำกับลำดับงาน โดยแอปเรียกผ่าน Temporal Client และ Worker ทำงานตาม Task Queue'},
+	{number:19,title:'ผลลัพธ์คือระบบทนทานและดูแลง่ายขึ้น',description:'Temporal ช่วยลดโอกาสงานตกหล่นและกู้คืน state ให้สอดคล้อง ลดโค้ดและ infrastructure สำหรับ feature ได้ราว 40–60% ตามข้อความในภาพ และช่วยรวม error เพื่อให้ตรวจสอบระบบได้ชัดเจนขึ้น'}
+];
+let previousSlide=contentSlides[0];
+for(const item of imageExplanations){
+	const fileName=`image (${item.number}).png`;
+	const imageSlide=document.createElement('section');
+	imageSlide.className='slide';
+	const eyebrow=document.createElement('p');
+	eyebrow.className='eyebrow';
+	eyebrow.textContent=`แนวคิด Temporal | ภาพ ${item.number - 9} / 10`;
+	const heading=document.createElement('h2');
+	heading.textContent=item.title;
+	const explanation=document.createElement('p');
+	explanation.className='image-explanation';
+	explanation.textContent=item.description;
+	const figure=document.createElement('figure');
+	figure.className='photo-stage';
+	const image=document.createElement('img');
+	image.src=`pic/${encodeURIComponent(fileName)}`;
+	image.alt=item.description;
+	const caption=document.createElement('figcaption');
+	caption.textContent=`ภาพต้นฉบับ: ${fileName}`;
+	figure.append(image,caption);
+	imageSlide.append(eyebrow,heading,explanation,figure);
+	previousSlide.after(imageSlide);
+	previousSlide=imageSlide;
+}
+const slides=[...deck.querySelectorAll('.slide')];
+const counter=document.getElementById('counter');
+counter.textContent=`1 / ${slides.length}`;
+let current=0;
+function show(index){current=(index+slides.length)%slides.length;slides.forEach((slide,position)=>slide.classList.toggle('active',position===current));counter.textContent=`${current+1} / ${slides.length}`;history.replaceState(null,'',`#${current+1}`)}
+document.getElementById('previous').addEventListener('click',()=>show(current-1));
+document.getElementById('next').addEventListener('click',()=>show(current+1));
+document.addEventListener('keydown',event=>{if(['ArrowRight','PageDown',' '].includes(event.key)){event.preventDefault();show(current+1)}if(['ArrowLeft','PageUp'].includes(event.key)){event.preventDefault();show(current-1)}if(event.key==='Home')show(0);if(event.key==='End')show(slides.length-1)});
+const initialSlide=Number.parseInt(location.hash.slice(1),10);if(initialSlide>=1&&initialSlide<=slides.length)show(initialSlide-1);
+</script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kafka + Temporal Order Event Demo</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, securityLevel: "loose", theme: "base", themeVariables: {
+      primaryColor: "#dff4f1", primaryBorderColor: "#087f8c", primaryTextColor: "#102a43",
+      lineColor: "#627d98", secondaryColor: "#fff3d6", tertiaryColor: "#e7eff8"
+    }});
+  </script>
+  <style>
+    :root { --ink:#102a43; --muted:#627d98; --teal:#087f8c; --orange:#d97706; --navy:#071e34; --paper:#f5f8fa; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; width:100%; height:100%; overflow:hidden; }
+    body { color:var(--ink); background:var(--navy); font-family:Georgia, "Times New Roman", serif; }
+    .deck { width:100vw; height:100vh; position:relative; background:var(--paper); }
+    .slide { display:none; width:100%; height:100%; padding:clamp(28px,6vw,88px) clamp(28px,8vw,128px) 72px; position:relative; overflow:auto; }
+    .slide.active { display:flex; flex-direction:column; }
+    .slide::before { content:""; position:absolute; top:0; left:0; width:100%; height:10px; background:var(--teal); }
+    .dark { color:#f7fafc; background:linear-gradient(135deg,#071e34 0%,#0b3850 62%,#087f8c 100%); }
+    .dark::before { background:var(--orange); }
+    .eyebrow { color:var(--orange); text-transform:uppercase; letter-spacing:.12em; font:700 .75rem/1.2 system-ui,sans-serif; }
+    h1 { max-width:900px; margin:18px 0; font-size:clamp(2.5rem,7vw,6.8rem); line-height:.98; letter-spacing:-.03em; }
+    h2 { margin:0 0 24px; color:var(--teal); font-size:clamp(2rem,4vw,4rem); line-height:1; }
+    h3 { margin:0 0 10px; font-size:clamp(1.15rem,2vw,1.6rem); }
+    p,li { font-size:clamp(1rem,1.6vw,1.35rem); line-height:1.45; }
+    .dark h2 { color:#80e1d7; } .dark .eyebrow { color:#ffd166; }
+    .subtitle { max-width:760px; color:var(--muted); font-size:clamp(1.1rem,2vw,1.7rem); }
+    .dark .subtitle { color:#d9edf2; }
+    .accent { color:var(--orange); } .teal { color:var(--teal); }
+    .meta { margin-top:auto; color:var(--muted); font:14px system-ui,sans-serif; }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:14px; }
+    .grid.two { grid-template-columns:repeat(2,1fr); }
+    .card { border:1px solid #d9e2ec; border-top:5px solid var(--teal); background:#fff; padding:20px; min-height:150px; }
+    .card.orange { border-top-color:var(--orange); } .card p { margin:0; color:var(--muted); }
+    .flow { display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap; margin:auto 0; }
+    .node { background:#fff; border:2px solid var(--teal); padding:18px 22px; font:700 clamp(.9rem,1.5vw,1.2rem) system-ui,sans-serif; text-align:center; }
+    .arrow { color:var(--orange); font:700 2rem system-ui,sans-serif; }
+    .architecture { display:grid; grid-template-columns:repeat(5, minmax(120px, 1fr)); gap:10px; align-items:center; margin:auto 0; }
+    .architecture .node { min-height:92px; display:grid; place-items:center; }
+    .architecture .node small { display:block; margin-top:6px; color:var(--muted); font:400 .78rem/1.2 system-ui,sans-serif; }
+    .architecture .arrow { text-align:center; }
+    .architecture-extra { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-top:22px; }
+    .architecture-extra .card { min-height:0; padding:14px; }
+    .diagram { background:#fff; border:1px solid #d9e2ec; padding:12px; overflow:auto; flex:1; min-height:250px; }
+    pre { background:#071e34; color:#d9edf2; padding:18px; overflow:auto; font:clamp(.72rem,1.2vw,1rem)/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; }
+    code { background:#e7eff8; padding:2px 5px; border-radius:3px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+    pre code { background:transparent; padding:0; }
+    .dark code { color:#102a43; background:#dff4f1; }
+    .step { display:grid; grid-template-columns:48px 1fr; gap:14px; align-items:start; margin:12px 0; }
+    .num { width:40px; height:40px; border-radius:50%; display:grid; place-items:center; background:var(--teal); color:#fff; font:700 1.1rem system-ui,sans-serif; }
+    .step p { margin:3px 0 0; }
+    .controls { position:fixed; z-index:5; right:24px; bottom:20px; display:flex; gap:8px; align-items:center; font:14px system-ui,sans-serif; }
+    button { border:1px solid #b7c7d6; background:#fff; color:var(--ink); padding:9px 14px; border-radius:4px; cursor:pointer; font-weight:700; }
+    button:hover { border-color:var(--teal); color:var(--teal); } .counter { color:#d9edf2; background:#071e34cc; padding:9px 12px; border-radius:4px; }
+    .footer { position:absolute; bottom:22px; left:clamp(28px,8vw,128px); color:var(--muted); font:13px system-ui,sans-serif; }
+    @media (max-width:760px) { .slide { padding:34px 22px 72px; } .grid,.grid.two,.architecture,.architecture-extra { grid-template-columns:1fr; gap:10px; } .card { min-height:auto; padding:14px; } .flow { margin:12px 0; } .arrow { transform:rotate(90deg); } .architecture .arrow { transform:rotate(90deg); } .footer { left:22px; } }
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="slide active dark">
+      <div class="eyebrow">Temporal Kubernetes Lab / Demo Presentation</div>
+      <h1>Order events that<br><span class="accent">finish reliably.</span></h1>
+      <p class="subtitle">A practical Kafka + Temporal workflow: accept an order event, process it asynchronously, and keep a durable history of what happened.</p>
+      <p class="meta">Kafka transports the event. Temporal orchestrates the work.</p>
+      <div class="footer">01 / 09</div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">The use case</div><h2>From one order event to one reliable outcome</h2>
+      <div class="grid">
+        <div class="card"><h3>Input</h3><p>An external system sends <code>order.created</code> through an HTTP webhook.</p></div>
+        <div class="card orange"><h3>Processing</h3><p>Kafka buffers the event; a consumer starts <code>OrderWorkflow</code>.</p></div>
+        <div class="card"><h3>Outcome</h3><p>The Temporal Worker executes the order activity and records the result.</p></div>
+      </div>
+      <p class="meta">The demo keeps the business logic small so the event-to-workflow boundary is easy to see.</p><div class="footer">02 / 09</div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">System shape</div><h2>The complete architecture</h2>
+      <div class="architecture">
+        <div class="node">External Client<small>curl / order service</small></div>
+        <div class="arrow">-></div>
+        <div class="node">Webhook API<small>POST /webhooks/orders</small></div>
+        <div class="arrow">-></div>
+        <div class="node">Kafka<small>order.created</small></div>
+        <div class="arrow">-></div>
+        <div class="node">Event Consumer<small>temporal-order-consumer</small></div>
+        <div class="arrow">-></div>
+        <div class="node">Temporal<small>OrderWorkflow</small></div>
+      </div>
+      <div class="architecture-extra">
+        <div class="card"><h3>Worker</h3><p>Polls <code>hello-task-queue</code> and runs <code>process_order</code>.</p></div>
+        <div class="card orange"><h3>Storage</h3><p>PostgreSQL stores workflow history; Elasticsearch stores visibility.</p></div>
+        <div class="card"><h3>Failure path</h3><p>Invalid events go to Kafka topic <code>order.dlq</code>.</p></div>
+      </div>
+      <div class="footer">03 / 09</div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">The event journey</div><h2>One request, six meaningful steps</h2>
+      <div>
+        <div class="step"><div class="num">1</div><p><strong>Receive</strong> the order at <code>POST /webhooks/orders</code>.</p></div>
+        <div class="step"><div class="num">2</div><p><strong>Publish</strong> a JSON event to Kafka topic <code>order.created</code>.</p></div>
+        <div class="step"><div class="num">3</div><p><strong>Consume</strong> with group <code>temporal-order-consumer</code>.</p></div>
+        <div class="step"><div class="num">4</div><p><strong>Start</strong> <code>OrderWorkflow</code> with ID <code>order-{order_id}</code>.</p></div>
+        <div class="step"><div class="num">5</div><p><strong>Execute</strong> <code>process_order</code> on <code>hello-task-queue</code>.</p></div>
+        <div class="step"><div class="num">6</div><p><strong>Commit</strong> the Kafka offset after workflow start succeeds.</p></div>
+      </div><div class="footer">04 / 09</div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Why both systems?</div><h2>Kafka moves events.<br>Temporal manages work.</h2>
+      <div class="grid two">
+        <div class="card orange"><h3>Kafka</h3><p>Durable event log, partitions, consumer groups, buffering, replay, and decoupled producers/consumers.</p></div>
+        <div class="card"><h3>Temporal</h3><p>Workflow state, retries, timeouts, activity execution, idempotency, visibility, and recovery.</p></div>
+      </div>
+      <p class="subtitle">The integration point is deliberately simple: <span class="teal">Kafka Consumer -> Temporal Client -> Workflow</span>.</p><div class="footer">05 / 09</div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Why use it?</div><h2>Benefits of Kafka + Temporal</h2>
+      <div class="grid">
+        <div class="card"><h3>Loose coupling</h3><p>Producers do not need to know when or how workers process an order.</p></div>
+        <div class="card orange"><h3>Resilience</h3><p>Kafka buffers spikes while Temporal retries failed activities and resumes work.</p></div>
+        <div class="card"><h3>Auditability</h3><p>Kafka keeps the event trail; Temporal keeps the workflow history and outcome.</p></div>
+        <div class="card orange"><h3>Scale independently</h3><p>Increase Kafka consumers for ingestion or Temporal workers for execution separately.</p></div>
+        <div class="card"><h3>Replay and recovery</h3><p>Replay events or inspect a failed workflow without losing the original context.</p></div>
+        <div class="card orange"><h3>Clear ownership</h3><p>Kafka handles transport; Temporal handles business process state.</p></div>
+      </div>
+      <div class="footer">06 / 11</div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Trade-offs</div><h2>Costs and limitations to plan for</h2>
+      <div class="grid two">
+        <div class="card orange"><h3>More infrastructure</h3><p>Kafka, Temporal, PostgreSQL, Elasticsearch, workers, and monitoring increase operational cost.</p></div>
+        <div class="card"><h3>At-least-once delivery</h3><p>Duplicate events can happen. Use stable Workflow IDs and idempotent Activities.</p></div>
+        <div class="card orange"><h3>Eventual consistency</h3><p>HTTP success means the event was accepted, not that the order has completed.</p></div>
+        <div class="card"><h3>Debugging spans systems</h3><p>Trace the event, offset, workflow ID, activity, and DLQ together with correlation IDs.</p></div>
+        <div class="card orange"><h3>Schema evolution</h3><p>Event fields need versioning and validation so old consumers keep working.</p></div>
+        <div class="card"><h3>Local demo is not production</h3><p>This lab uses single-node Kafka, plaintext traffic, and no production-grade HA.</p></div>
+      </div>
+      <p class="meta">The pattern pays off when workflows are long-running, failure-prone, or need a durable audit trail.</p><div class="footer">07 / 11</div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Reliability behavior</div><h2>Three outcomes to demonstrate</h2>
+      <div class="grid">
+        <div class="card"><h3><span class="teal">Success</span></h3><p>Valid event returns HTTP <code>202</code>, starts the workflow, and completes the activity.</p></div>
+        <div class="card orange"><h3><span class="accent">Rejected</span></h3><p>Missing <code>order_id</code> or <code>customer</code> returns HTTP <code>400</code> before Kafka.</p></div>
+        <div class="card"><h3><span class="accent">Waiting</span></h3><p>A long-running activity leaves the workflow <code>RUNNING</code> until it completes.</p></div>
+      </div>
+      <p class="meta">A failed workflow is a separate Temporal path: the workflow starts, the activity errors, and history shows why.</p><div class="footer">08 / 11</div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Event contract</div><h2>Small payload, useful identity</h2>
+      <pre><code>{
+  "event_id": "evt-8f42c3",
+  "event_type": "order.created",
+  "occurred_at": "2026-09-09T10:30:00Z",
+  "order_id": "ORD-1001",
+  "customer": "Alice"
+}</code></pre>
+      <div class="grid two">
+        <div class="card"><h3>Idempotency</h3><p>Use <code>order-{order_id}</code> as the Temporal Workflow ID. Duplicate Kafka delivery does not create a second workflow.</p></div>
+        <div class="card orange"><h3>Dead letter</h3><p>Malformed or incomplete events are published to <code>order.dlq</code> for inspection and replay.</p></div>
+      </div><div class="footer">09 / 11</div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Live demo</div><h2>Run the happy path</h2>
+      <pre><code># Terminal 1
+kubectl -n temporal port-forward service/temporal-webhook-api 8081:8080
+
+# Terminal 2
+curl -i -X POST http://localhost:8081/webhooks/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"order_id":"ORD-DEMO-001","customer":"Alice"}'
+
+# Inspect the workflow
+kubectl -n temporal exec deployment/temporal-admin-tools -- \
+  temporal workflow describe --namespace default \
+  --workflow-id order-ORD-DEMO-001</code></pre>
+      <p class="meta">Expected: HTTP <code>202</code>, then Workflow status <code>COMPLETED</code>.</p><div class="footer">10 / 11</div>
+    </section>
+
+    <section class="slide dark">
+      <div class="eyebrow">Takeaway</div><h2>Events start the work.<br>Workflows finish the story.</h2>
+      <div class="flow"><div class="node">Webhook</div><div class="arrow">-></div><div class="node">Kafka</div><div class="arrow">-></div><div class="node">Consumer</div><div class="arrow">-></div><div class="node">Temporal</div><div class="arrow">-></div><div class="node">Worker</div></div>
+      <p class="subtitle">The UI makes every step inspectable: event ingestion, workflow history, activity result, and final status.</p>
+      <p class="meta">Demo complete</p><div class="footer">11 / 11</div>
+    </section>
+  </main>
+  <nav class="controls" aria-label="Presentation controls">
+    <button id="previous" type="button">Previous</button><span class="counter" id="counter">1 / 11</span><button id="next" type="button">Next</button>
+  </nav>
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    let current = 0;
+    const counter = document.getElementById('counter');
+    function show(index) {
+      current = (index + slides.length) % slides.length;
+      slides.forEach((slide, position) => slide.classList.toggle('active', position === current));
+      counter.textContent = `${current + 1} / ${slides.length}`;
+      history.replaceState(null, '', `#${current + 1}`);
+    }
+    document.getElementById('previous').addEventListener('click', () => show(current - 1));
+    document.getElementById('next').addEventListener('click', () => show(current + 1));
+    document.addEventListener('keydown', event => {
+      if (['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); show(current + 1); }
+      if (['ArrowLeft', 'PageUp'].includes(event.key)) { event.preventDefault(); show(current - 1); }
+      if (event.key === 'Home') show(0);
+      if (event.key === 'End') show(slides.length - 1);
+    });
+    const initialSlide = Number.parseInt(location.hash.slice(1), 10);
+    if (initialSlide >= 1 && initialSlide <= slides.length) show(initialSlide - 1);
+  </script>
+</body>
+</html>

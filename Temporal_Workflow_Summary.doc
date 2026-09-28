@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>สรุปการทำงาน Temporal Workflow จาก YAML</title>
+<style>
+body { font-family: Tahoma, Arial, sans-serif; color: #222; line-height: 1.6; margin: 36px; }
+h1 { color: #1f4e79; font-size: 24pt; border-bottom: 2px solid #1f4e79; padding-bottom: 8px; }
+h2 { color: #1f4e79; font-size: 17pt; margin-top: 24px; }
+h3 { color: #365f91; font-size: 14pt; }
+p { font-size: 11pt; }
+code, pre { font-family: Consolas, "Courier New", monospace; }
+pre { background: #f3f6f9; border: 1px solid #c9d5e0; padding: 12px; white-space: pre-wrap; font-size: 10pt; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+th { background: #1f4e79; color: white; padding: 8px; text-align: left; }
+td { border: 1px solid #b8c7d1; padding: 8px; vertical-align: top; }
+.note { background: #fff2cc; border-left: 5px solid #bf9000; padding: 10px; }
+.success { background: #e2f0d9; border-left: 5px solid #70ad47; padding: 10px; }
+</style>
+</head>
+<body>
+<h1>สรุปการทำงาน Temporal Workflow จาก YAML</h1>
+<p><strong>วัตถุประสงค์:</strong> อธิบายการทำงานของระบบตั้งแต่รับคำสั่งซื้อ จนกระทั่ง Workflow ทำงานเสร็จ โดยอ้างอิงจาก YAML ในโครงการ temporalio</p>
+
+<h2>1. ภาพรวมระบบ</h2>
+<p>ระบบนี้ใช้ Kubernetes เป็นตัวรันบริการต่าง ๆ โดยมี Temporal ทำหน้าที่ควบคุมลำดับงานและเก็บประวัติการทำงาน ส่วน Kafka ทำหน้าที่รับส่ง Event ของคำสั่งซื้อ</p>
+<pre>Client
+  | POST /webhooks/orders
+  v
+Webhook API
+  | publish event
+  v
+Kafka: order.created
+  |
+  v
+Order Event Consumer
+  | start OrderWorkflow
+  v
+Temporal Server
+  |
+  v
+Task Queue: hello-task-queue
+  |
+  v
+Temporal Worker
+  |
+  v
+process_order Activity
+  |
+  v
+Workflow Completed</pre>
+
+<h2>2. ส่วนประกอบหลักและหน้าที่</h2>
+<table>
+<tr><th>ไฟล์ YAML</th><th>ส่วนประกอบ</th><th>หน้าที่</th></tr>
+<tr><td>00-namespace.yaml</td><td>Kubernetes Namespace</td><td>สร้าง Namespace ชื่อ temporal สำหรับรวมบริการทั้งหมด</td></tr>
+<tr><td>30-temporal-server.yaml</td><td>Temporal Server</td><td>รับคำสั่งเริ่ม Workflow จัดการ Task และบันทึกประวัติการทำงาน</td></tr>
+<tr><td>50-temporal-worker.yaml</td><td>Temporal Worker</td><td>รับงานจาก Task Queue แล้วเรียก Workflow และ Activity ที่ลงทะเบียนไว้</td></tr>
+<tr><td>60-webhook-api.yaml</td><td>Webhook API</td><td>รับคำสั่งซื้อ ตรวจสอบข้อมูล และส่ง Event เข้า Kafka</td></tr>
+<tr><td>70-kafka.yaml</td><td>Kafka Broker</td><td>รับส่งและเก็บ Event ระหว่าง API กับ Consumer</td></tr>
+<tr><td>75-kafka-topics.yaml</td><td>Kafka Topics</td><td>สร้าง Topic order.created และ order.dlq</td></tr>
+<tr><td>80-order-event-consumer.yaml</td><td>Order Event Consumer</td><td>อ่าน Event จาก Kafka แล้วเริ่ม OrderWorkflow ใน Temporal</td></tr>
+</table>
+
+<h2>3. ลำดับการทำงานตั้งแต่ต้นจนจบ</h2>
+<h3>ขั้นตอนที่ 1: Client ส่งคำสั่งซื้อ</h3>
+<p>Client เรียก API ดังนี้:</p>
+<pre>POST /webhooks/orders</pre>
+<p>ตัวอย่าง Request:</p>
+<pre>{
+  "order_id": "ORD-001",
+  "customer": "Alice"
+}</pre>
+<p>Webhook API จะตรวจสอบว่ามี <code>order_id</code> และ <code>customer</code> หากข้อมูลไม่ครบจะตอบ HTTP 400</p>
+
+<h3>ขั้นตอนที่ 2: Webhook API สร้างและส่ง Event เข้า Kafka</h3>
+<p>เมื่อข้อมูลถูกต้อง API จะสร้าง Event ประเภท <code>order.created</code> แล้วส่งไปยัง Kafka Topic เดียวกัน</p>
+<pre>{
+  "event_id": "uuid",
+  "event_type": "order.created",
+  "occurred_at": "เวลาปัจจุบัน",
+  "order_id": "ORD-001",
+  "customer": "Alice"
+}</pre>
+<p>API ตอบกลับ HTTP 202 ซึ่งหมายความว่า “รับงานไว้แล้ว” แต่การประมวลผลคำสั่งซื้อจะทำต่อแบบ Asynchronous</p>
+
+<h3>ขั้นตอนที่ 3: Kafka เก็บ Event</h3>
+<p>Kafka เก็บ Event ไว้ใน Topic <code>order.created</code> จนกว่า Consumer จะอ่านและยืนยันการประมวลผล</p>
+
+<h3>ขั้นตอนที่ 4: Consumer อ่าน Event และเริ่ม Temporal Workflow</h3>
+<p>Order Event Consumer อ่านข้อมูลจาก Kafka แล้วดึงค่า <code>order_id</code> และ <code>customer</code> จาก Event จากนั้นเรียก Temporal เพื่อเริ่ม Workflow ชื่อ <code>OrderWorkflow</code></p>
+<pre>Workflow Type: OrderWorkflow
+Workflow ID: order-ORD-001
+Task Queue: hello-task-queue
+Input: { order_id: "ORD-001", customer: "Alice" }</pre>
+<p>การใช้ Workflow ID รูปแบบ <code>order-&lt;order_id&gt;</code> ช่วยป้องกันการสร้าง Workflow ซ้ำสำหรับ Order เดิม</p>
+
+<h3>ขั้นตอนที่ 5: Temporal Server สร้าง Task</h3>
+<p>Temporal Server รับคำขอจาก Consumer แล้วบันทึกสถานะและประวัติ Workflow ลง PostgreSQL จากนั้นวาง Task ไว้ใน Task Queue ชื่อ <code>hello-task-queue</code></p>
+<p>Elasticsearch ใช้เก็บข้อมูล Visibility เพื่อให้ค้นหาและดูสถานะ Workflow ผ่าน Temporal UI ได้</p>
+
+<h3>ขั้นตอนที่ 6: Worker รับ Task</h3>
+<p>Temporal Worker เชื่อมต่อกับ Temporal Server และ Poll งานจาก <code>hello-task-queue</code> เมื่อพบงานของ <code>OrderWorkflow</code> จะเริ่มประมวลผล Workflow</p>
+
+<h3>ขั้นตอนที่ 7: Workflow เรียก Activity</h3>
+<p><code>OrderWorkflow</code> เรียก Activity ชื่อ <code>process_order</code> พร้อมส่งข้อมูล Order เข้าไป</p>
+<pre>process_order({ order_id: "ORD-001", customer: "Alice" })</pre>
+<p>ใน Lab นี้ Activity จำลองการประมวลผลและคืนข้อความ:</p>
+<pre>Order ORD-001 for Alice processed successfully</pre>
+
+<h3>ขั้นตอนที่ 8: Workflow จบสำเร็จ</h3>
+<div class="success"><strong>ผลลัพธ์:</strong> Worker ส่งผลกลับ Temporal Server และ Workflow เปลี่ยนสถานะเป็น <code>Completed</code> โดยประวัติจะถูกเก็บไว้ให้ตรวจสอบย้อนหลังได้</div>
+
+<h2>4. กรณีข้อมูลผิดพลาด</h2>
+<p>หาก Event จาก Kafka ไม่มี <code>order_id</code> หรือ <code>customer</code> Consumer จะไม่เริ่ม Workflow แต่จะเพิ่มข้อความ Error ลงใน Event แล้วส่งไปยัง Dead Letter Queue:</p>
+<pre>order.created -> ตรวจพบข้อมูลผิด -> order.dlq</pre>
+
+<h2>5. Workflow ที่มีอยู่ใน Worker</h2>
+<table>
+<tr><th>Workflow</th><th>Activity</th><th>ผลลัพธ์</th></tr>
+<tr><td>GreetingWorkflow</td><td>say_hello</td><td>Hello, &lt;name&gt;!</td></tr>
+<tr><td>FailingWorkflow</td><td>fail_on_purpose</td><td>ล้มเหลวโดยตั้งใจ และมีสถานะ Failed</td></tr>
+<tr><td>OrderWorkflow</td><td>process_order</td><td>ประมวลผล Order และจบด้วยสถานะ Completed</td></tr>
+</table>
+
+<h2>6. สรุปแบบสั้นที่สุด</h2>
+<pre>Client
+  -> Webhook API
+  -> Kafka: order.created
+  -> Order Event Consumer
+  -> Temporal Server
+  -> Task Queue
+  -> Temporal Worker
+  -> OrderWorkflow
+  -> process_order Activity
+  -> Workflow Completed</pre>
+
+<h2>7. ประโยชน์ของรูปแบบนี้</h2>
+<ul>
+<li>API ตอบกลับได้เร็ว เพราะไม่ต้องรอ Workflow ทำงานจนจบ</li>
+<li>Kafka ช่วยแยกการรับคำสั่งซื้อออกจากการประมวลผล</li>
+<li>Temporal เก็บสถานะและประวัติของ Workflow</li>
+<li>กำหนด Workflow ID เพื่อป้องกันการประมวลผล Order ซ้ำ</li>
+<li>ตรวจสอบสถานะและข้อผิดพลาดผ่าน Temporal UI ได้</li>
+<li>แยก Event ที่ข้อมูลผิดไปไว้ใน Dead Letter Queue</li>
+</ul>
+
+<div class="note"><strong>หมายเหตุ:</strong> ในไฟล์ 60-webhook-api.yaml ควรตรวจสอบการเยื้องบรรทัดของฟังก์ชัน stop_kafka_producer ให้ถูกต้องตาม Python หาก API เริ่มทำงานไม่ได้ เพราะ IndentationError อาจทำให้ Container หยุดทำงาน</div>
+
+<p style="margin-top: 32px; color: #666;">เอกสารนี้จัดทำจาก YAML ในโครงการ temporalio</p>
+</body>
+</html>

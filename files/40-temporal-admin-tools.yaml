@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-admin-tools
+  namespace: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-admin-tools
+  template:
+    metadata:
+      labels:
+        app: temporal-admin-tools
+    spec:
+      containers:
+        - name: admin-tools
+          image: temporalio/admin-tools:1.29.1-tctl-1.18.4-cli-1.5.0
+          # keep the container alive so you can `kubectl exec` into it and
+          # run tctl / temporal CLI commands interactively
+          command: ["sleep", "infinity"]
+          env:
+            - name: TEMPORAL_CLI_ADDRESS
+              value: temporal-frontend.temporal.svc.cluster.local:7233
+            - name: TEMPORAL_ADDRESS
+              value: temporal-frontend.temporal.svc.cluster.local:7233
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

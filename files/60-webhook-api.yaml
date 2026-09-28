@@ -1,0 +1,145 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-webhook-code
+  namespace: temporal
+data:
+  api.py: |
+    import json
+    import os
+
+    from aiohttp import web
+    from temporalio.client import Client
+    from temporalio.exceptions import WorkflowAlreadyStartedError
+
+
+    temporal_client: Client | None = None
+
+
+    async def health(request: web.Request) -> web.Response:
+        return web.json_response({"status": "ok"})
+
+
+    async def create_order_workflow(request: web.Request) -> web.Response:
+          try:
+            payload = await request.json()
+          except (json.JSONDecodeError, UnicodeDecodeError):
+            return web.json_response({"error": "request body must be valid JSON"}, status=400)
+
+          if not isinstance(payload, dict):
+            return web.json_response({"error": "request body must be a JSON object"}, status=400)
+
+          order_id = payload.get("order_id")
+          customer = payload.get("customer")
+          if not isinstance(order_id, str) or not order_id.strip() or not isinstance(customer, str) or not customer.strip():
+            return web.json_response(
+              {"error": "order_id and customer are required"},
+              status=400,
+            )
+
+          workflow_id = f"order-{order_id}"
+          if temporal_client is None:
+            raise web.HTTPServiceUnavailable(text="Temporal client is unavailable")
+
+          try:
+            await temporal_client.start_workflow(
+              "OrderWorkflow",
+              {"order_id": order_id, "customer": customer},
+              id=workflow_id,
+              task_queue=os.getenv("TEMPORAL_TASK_QUEUE", "hello-task-queue"),
+            )
+            message = "workflow started"
+          except WorkflowAlreadyStartedError:
+            message = "workflow already started"
+
+          return web.json_response(
+            {
+              "message": message,
+              "order_id": order_id,
+              "workflow_id": workflow_id,
+            },
+            status=202,
+          )
+
+
+    async def create_app() -> web.Application:
+        global temporal_client
+        temporal_client = await Client.connect(
+            os.getenv("TEMPORAL_ADDRESS", "temporal-frontend.temporal.svc.cluster.local:7233"),
+            namespace=os.getenv("TEMPORAL_NAMESPACE", "default"),
+        )
+
+        app = web.Application()
+        app.router.add_get("/health", health)
+        app.router.add_post("/webhooks/orders", create_order_workflow)
+        return app
+
+
+    if __name__ == "__main__":
+        web.run_app(create_app(), host="0.0.0.0", port=8080)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-webhook-api
+  namespace: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-webhook-api
+  template:
+    metadata:
+      labels:
+        app: temporal-webhook-api
+    spec:
+      containers:
+        - name: webhook-api
+          image: python:3.12-slim
+          command: ["sh", "-c"]
+          args:
+            - pip install --no-cache-dir aiohttp temporalio && python /app/api.py
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: temporal-frontend.temporal.svc.cluster.local:7233
+            - name: TEMPORAL_NAMESPACE
+              value: default
+            - name: TEMPORAL_TASK_QUEUE
+              value: hello-task-queue
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: webhook-code
+              mountPath: /app
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: webhook-code
+          configMap:
+            name: temporal-webhook-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-webhook-api
+  namespace: temporal
+spec:
+  selector:
+    app: temporal-webhook-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

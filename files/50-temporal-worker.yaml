@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-worker-code
+  namespace: temporal
+data:
+  worker.py: |
+    import asyncio
+    import os
+    from datetime import timedelta
+
+    from temporalio import activity, workflow
+    from temporalio.common import RetryPolicy
+    from temporalio.client import Client
+    from temporalio.worker import Worker
+
+
+    @activity.defn
+    async def say_hello(name: str) -> str:
+        return f"Hello, {name}!"
+
+
+    @activity.defn
+    async def fail_on_purpose(message: str) -> str:
+        raise RuntimeError(f"Intentional lab failure: {message}")
+
+
+    @activity.defn
+    async def process_order(order: dict) -> str:
+        return f"Order {order['order_id']} for {order['customer']} processed successfully"
+
+
+    @workflow.defn
+    class GreetingWorkflow:
+        @workflow.run
+        async def run(self, name: str) -> str:
+            return await workflow.execute_activity(
+                say_hello,
+                name,
+                start_to_close_timeout=timedelta(seconds=10),
+            )
+
+
+    @workflow.defn
+    class FailingWorkflow:
+        @workflow.run
+        async def run(self, message: str) -> str:
+            return await workflow.execute_activity(
+                fail_on_purpose,
+                message,
+                start_to_close_timeout=timedelta(seconds=10),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
+
+
+    @workflow.defn
+    class OrderWorkflow:
+        @workflow.run
+        async def run(self, order: dict) -> str:
+            return await workflow.execute_activity(
+                process_order,
+                order,
+                start_to_close_timeout=timedelta(seconds=10),
+            )
+
+
+    async def main() -> None:
+        address = os.getenv("TEMPORAL_ADDRESS", "temporal-frontend.temporal.svc.cluster.local:7233")
+        namespace = os.getenv("TEMPORAL_NAMESPACE", "default")
+        task_queue = os.getenv("TEMPORAL_TASK_QUEUE", "hello-task-queue")
+
+        client = await Client.connect(address, namespace=namespace)
+        worker = Worker(
+            client,
+            task_queue=task_queue,
+            workflows=[GreetingWorkflow, FailingWorkflow, OrderWorkflow],
+            activities=[say_hello, fail_on_purpose, process_order],
+        )
+
+        print(f"Worker listening on {address}, queue={task_queue}", flush=True)
+        await worker.run()
+
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-worker
+  namespace: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-worker
+  template:
+    metadata:
+      labels:
+        app: temporal-worker
+    spec:
+      containers:
+        - name: worker
+          image: python:3.12-slim
+          command: ["sh", "-c"]
+          args:
+            - pip install --no-cache-dir temporalio && python /app/worker.py
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: temporal-frontend.temporal.svc.cluster.local:7233
+            - name: TEMPORAL_NAMESPACE
+              value: default
+            - name: TEMPORAL_TASK_QUEUE
+              value: hello-task-queue
+          volumeMounts:
+            - name: worker-code
+              mountPath: /app
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: worker-code
+          configMap:
+            name: temporal-worker-code
